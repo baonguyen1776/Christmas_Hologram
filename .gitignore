@@ -45,6 +45,18 @@ venv.bak/
 .env.local
 .env.*.local
 
+# Images & Media (Don't push personal photos to git)
+*.jpeg
+*.jpg
+*.png
+*.gif
+*.bmp
+*.tiff
+*.webp
+
+# But KEEP the font file
+!assets/GreatVibes-Regular.ttf
+
 # OS
 .DS_Store
 .DS_Store?
