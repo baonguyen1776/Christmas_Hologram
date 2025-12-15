@@ -31,7 +31,7 @@ cd Christmas_Hologram
 ### 2. Tạo môi trường ảo
 ```bash
 python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate  # Windows: .\venv\bin\Activate.ps1
 ```
 
 ### 3. Cài thư viện phụ thuộc
