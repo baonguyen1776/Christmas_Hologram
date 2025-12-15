@@ -17,12 +17,21 @@ import threading
 import queue
 from typing import List, Tuple, Optional
 from dataclasses import dataclass, field
+import time  # Add for twinkling effect
 
 # Import tree từ scenes
 from scenes.tree_3d import HologramTree, BLACK, WHITE, TREE_COLORS
 
 # Import hand tracking
 from core.core_hand_tracking import HandDetector
+
+# Import config
+from config import (
+    TITLE_TEXT, TITLE_FONT_SIZE, TITLE_FONT_BOLD, TITLE_FONT_ITALIC, TITLE_FONT_PATH,
+    SUBTITLE_TEXT, SUBTITLE_FONT_SIZE, SUBTITLE_FONT_PATH,
+    TITLE_SHADOW_COLOR, TITLE_MAIN_COLOR, SUBTITLE_COLOR, TITLE_SHADOW_OFFSET, SHOW_SHADOW,
+    DEBUG_FONT_SIZE, DEBUG_FONT_NAME
+)
 
 # ============================================================================
 # FLOATING PHOTO CLASS
@@ -198,6 +207,9 @@ class InteractiveHologram:
         self.photo_orbit_speed = 0.002  # Slow rotation speed (từ từ)
         self.selected_photo_index = -1  # -1 = none selected
         self.photo_zoom_progress = 0.0  # 0 = normal, 1 = fullscreen
+        self.photo_extraction_progress = 0.0  # 0-1: animation kéo ảnh ra khỏi quỹ đạo
+        self.photo_extraction_start_time = 0
+        self.photo_extraction_duration = 0.25  
         self._load_photos()
         
         # Hand tracking state - ĐƠN GIẢN HÓA
@@ -210,7 +222,7 @@ class InteractiveHologram:
         
         # Protection cooldown sau khi TREE -> PHOTOS (3 giây không nhận gesture)
         self.explosion_start_time = 0
-        self.explosion_protection_duration = 180  # 3 giây @ 60fps
+        self.explosion_protection_duration = 60  # 1 giây @ 60fps (để zoom ảnh sớm hơn)
         
         # Zoom-out hold timer (cần giữ 3 giây liên tục)
         self.zoom_out_hold_start = 0
@@ -354,26 +366,26 @@ class InteractiveHologram:
             if (self.time - self.explosion_start_time) < self.explosion_protection_duration:
                 return  # Bỏ qua mọi gesture
             
-            # ZOOM OUT (chụm ngón) -> CẦN GIỮ LIÊN TỤC 3 GIÂY
-            if distance < self.zoom_out_threshold:
+            # 2 NGÓN CHỤM (hand_span <= 80) -> CẦN GIỮ 2 GIÂY ĐỂ COLLAPSE VỀ TREE
+            if hand_span <= 80 and hand_span > 0:
                 # Bắt đầu đếm hoặc tiếp tục đếm
                 if self.zoom_out_hold_start == 0:
                     self.zoom_out_hold_start = self.time
-                    print(f"[GESTURE] Starting zoom-out hold...")
+                    print(f"[GESTURE] Starting pinch hold to collapse (hand_span={hand_span:.0f})...")
                 
-                # Check nếu đã giữ đủ 3 giây
+                # Check nếu đã giữ đủ 2 giây
                 hold_time = self.time - self.zoom_out_hold_start
-                if hold_time >= self.zoom_out_hold_duration:
+                if hold_time >= 90:  # 1.5 giây @ 60fps
                     self.target_explosion = 0.0
                     self.photos_visible = False
                     self.interaction_mode = "collapsing"
                     self.last_gesture_time = self.time
                     self.zoom_out_hold_start = 0  # Reset
-                    print(f"[GESTURE] PHOTOS -> COLLAPSING (held {hold_time} frames)")
+                    print(f"[GESTURE] PHOTOS -> COLLAPSING (pinch held {hold_time/60:.1f}s)")
             else:
-                # Không còn zoom-out -> reset timer
+                # Không còn chụm -> reset timer
                 if self.zoom_out_hold_start > 0:
-                    print(f"[GESTURE] Zoom-out hold cancelled")
+                    print(f"[GESTURE] Pinch hold cancelled (hand_span={hand_span:.0f})")
                 self.zoom_out_hold_start = 0
             
             # XÒE 5 NGÓN (hand_span lớn) -> zoom ảnh NGAY LẬP TỨC
@@ -381,7 +393,9 @@ class InteractiveHologram:
                 self._select_closest_photo()
                 if self.selected_photo_index >= 0:
                     self.interaction_mode = "zoom_photo"
-                    self.photo_zoom_progress = 0.3  # Bắt đầu với 30% zoom
+                    self.photo_zoom_progress = 0.0  # Bắt đầu từ 0%, zoom + extraction cùng lúc
+                    self.photo_extraction_start_time = self.time
+                    self.photo_extraction_progress = 0.0  # Start extraction animation
                     self.last_gesture_time = self.time
                     print(f"[GESTURE] PHOTOS -> ZOOM_PHOTO (hand_span={hand_span:.0f})")
         
@@ -570,6 +584,9 @@ class InteractiveHologram:
         # Collect all photos with their positions for z-sorting
         render_list = []
         
+        center_x = self.width // 2
+        center_y = self.height // 2
+        
         for i, photo in enumerate(self.photos):
             if photo.fade_alpha < 5:
                 continue
@@ -608,23 +625,30 @@ class InteractiveHologram:
             if not final_pos:
                 continue
             
-            # Center position (starting point)
-            center_x = self.width // 2
-            center_y = self.height // 2
-            
             # Interpolate position from center to orbit position based on fade_alpha
             progress = photo.fade_alpha / 255.0  # 0 to 1
             ease_progress = progress * progress * (3 - 2 * progress)  # Smoothstep
             
-            curr_x = center_x + (final_pos[0] - center_x) * ease_progress
-            curr_y = center_y + (final_pos[1] - center_y) * ease_progress
+            # === APPLY EXTRACTION EFFECT ===
+            # Nếu ảnh này đang được kéo ra, interpolate từ vị trí quỹ đạo về tâm + scale up
+            if i == self.selected_photo_index and self.photo_extraction_progress > 0:
+                extraction = self.photo_extraction_progress
+                # Lerp position từ orbit_pos về center
+                curr_x = final_pos[0] + (center_x - final_pos[0]) * extraction
+                curr_y = final_pos[1] + (center_y - final_pos[1]) * extraction
+                # Ảnh được chọn sẽ lớn hơn (scale up)
+                ease_progress = ease_progress * (1 + extraction * 0.5)
+            else:
+                # Các ảnh khác vẫn quay bình thường nhưng fade ra khi có ảnh được chọn
+                curr_x = center_x + (final_pos[0] - center_x) * ease_progress
+                curr_y = center_y + (final_pos[1] - center_y) * ease_progress
             
-            render_list.append((i, photo, x, y, z, (curr_x, curr_y), angle, ease_progress))
+            render_list.append((i, photo, x, y, z, (curr_x, curr_y), angle, ease_progress, final_pos))
         
         # Sort by Z (draw far photos first, near photos last - painter's algorithm)
         render_list.sort(key=lambda item: item[4])
         
-        for i, photo, x, y, z, pos, angle, ease_progress in render_list:
+        for i, photo, x, y, z, pos, angle, ease_progress, final_pos in render_list:
             # Perspective scaling
             ellipse_b = 300
             depth_factor = 0.55 + 0.45 * ((z + ellipse_b) / (2 * ellipse_b))
@@ -638,8 +662,14 @@ class InteractiveHologram:
             if scaled_w > 20 and scaled_h > 20:
                 scaled_img = pygame.transform.scale(photo.image, (scaled_w, scaled_h))
                 
-                if photo.fade_alpha < 255:
-                    scaled_img.set_alpha(int(photo.fade_alpha))
+                # Apply alpha: giảm alpha cho ảnh không được chọn khi có extraction
+                alpha = int(photo.fade_alpha)
+                if i != self.selected_photo_index and self.photo_extraction_progress > 0:
+                    # Fade out các ảnh khác khi ảnh được chọn đang được kéo ra
+                    alpha = int(photo.fade_alpha * (1 - self.photo_extraction_progress * 0.5))
+                
+                if alpha < 255:
+                    scaled_img.set_alpha(alpha)
                 
                 # Draw photo at interpolated position
                 surface.blit(scaled_img, (pos[0] - scaled_w // 2, pos[1] - scaled_h // 2))
@@ -716,6 +746,18 @@ class InteractiveHologram:
         if self.photos_visible:
             self.photo_orbit_angle += self.photo_orbit_speed * 3.5  # NHANH HƠN 1 CHÚT
         
+        # Update photo extraction animation (kéo ảnh ra khỏi quỹ đạo) + zoom
+        if self.interaction_mode == "zoom_photo":
+            elapsed = (self.time - self.photo_extraction_start_time) / 60.0  # Convert to seconds
+            extraction_progress = min(1.0, elapsed / self.photo_extraction_duration)
+            # Smoothstep easing cho animation mượt
+            self.photo_extraction_progress = extraction_progress * extraction_progress * (3 - 2 * extraction_progress)
+            # Auto-zoom during extraction phase (0->0.7)
+            if self.photo_extraction_progress < 1.0:
+                self.photo_zoom_progress = self.photo_extraction_progress * 0.7  # Quick zoom to 0.7
+        else:
+            self.photo_extraction_progress = 0.0
+        
         # Update photo visibility
         for i, photo in enumerate(self.photos):
             if self.photos_visible:
@@ -754,6 +796,51 @@ class InteractiveHologram:
 
 
 # ============================================================================
+# HELPER FUNCTION - GLOW TEXT EFFECT
+# ============================================================================
+
+def draw_glowing_text(surface, text, font, color, pos, glow_color=(255, 200, 100), glow_size=3):
+    """Draw text with glowing halo effect"""
+    text_surf = font.render(text, True, color)
+    text_rect = text_surf.get_rect(center=pos)
+    
+    # Draw glow layers (outer to inner)
+    for glow_layer in range(glow_size, 0, -1):
+        alpha = int(50 * (1 - glow_layer / glow_size))  # Fade out
+        glow_surf = font.render(text, True, glow_color)
+        glow_surf.set_alpha(alpha)
+        glow_rect = glow_surf.get_rect(center=(pos[0], pos[1]))
+        
+        # Draw glow in multiple directions
+        for offset in range(0, 360, 45):
+            rad = math.radians(offset)
+            ox = int(math.cos(rad) * glow_layer)
+            oy = int(math.sin(rad) * glow_layer)
+            surface.blit(glow_surf, (glow_rect.x + ox, glow_rect.y + oy))
+    
+    # Draw main text
+    surface.blit(text_surf, text_rect)
+
+
+def draw_twinkling_text(surface, text, font, color, pos, time_offset=0, twinkle_speed=0.1):
+    """Draw text with twinkling/shimmer effect"""
+    current_time = time.time() * twinkle_speed + time_offset
+    shimmer = (math.sin(current_time * 3) + 1) / 2  # 0 to 1
+    
+    # Create shimmer color
+    shimmer_color = tuple(int(c + (255 - c) * shimmer * 0.5) for c in color)
+    
+    text_surf = font.render(text, True, shimmer_color)
+    text_rect = text_surf.get_rect(center=pos)
+    
+    # Add slight alpha variation
+    alpha = int(200 + shimmer * 55)
+    text_surf.set_alpha(alpha)
+    surface.blit(text_surf, text_rect)
+    text_surf.set_alpha(255)
+
+
+# ============================================================================
 # MAIN
 # ============================================================================
 
@@ -775,11 +862,13 @@ def main():
     
     # Fonts
     try:
-        font = pygame.font.SysFont("Arial", 18)
-        title_font = pygame.font.SysFont("Arial", 36, bold=True)
+        font = pygame.font.SysFont(DEBUG_FONT_NAME, DEBUG_FONT_SIZE)
+        title_font = pygame.font.Font(TITLE_FONT_PATH, TITLE_FONT_SIZE)
+        subtitle_font = pygame.font.Font(SUBTITLE_FONT_PATH, SUBTITLE_FONT_SIZE)
     except:
-        font = pygame.font.Font(None, 18)
-        title_font = pygame.font.Font(None, 36)
+        font = pygame.font.Font(None, DEBUG_FONT_SIZE)
+        title_font = pygame.font.Font(None, TITLE_FONT_SIZE)
+        subtitle_font = pygame.font.Font(None, SUBTITLE_FONT_SIZE)
     
     zoom = 1.0
     running = True
@@ -830,11 +919,29 @@ def main():
         # Draw hologram
         hologram.draw(screen, zoom)
         
-        # Text (hide when photo zoomed)
-        if hologram.interaction_mode != "zoom_photo":
-            text = title_font.render('Noel vui vẻ "Cô giáo"', True, (255, 200, 100))
-            text_rect = text.get_rect(center=(WIDTH // 2, HEIGHT - 80))
-            screen.blit(text, text_rect)
+        # Text (show only in tree mode, hide in universe & zoom screens)
+        if hologram.interaction_mode == "tree":
+            # Glow effect for title
+            draw_glowing_text(
+                screen, TITLE_TEXT, title_font, TITLE_MAIN_COLOR,
+                (WIDTH // 2, HEIGHT - 80),
+                glow_color=(255, 200, 100), glow_size=4
+            )
+            
+            # Add twinkling effect
+            draw_twinkling_text(
+                screen, TITLE_TEXT, title_font, TITLE_MAIN_COLOR,
+                (WIDTH // 2, HEIGHT - 80),
+                time_offset=0, twinkle_speed=0.15
+            )
+            
+            # Subtitle (if any)
+            if SUBTITLE_TEXT:
+                draw_glowing_text(
+                    screen, SUBTITLE_TEXT, subtitle_font, SUBTITLE_COLOR,
+                    (WIDTH // 2, HEIGHT - 40),
+                    glow_color=(255, 180, 100), glow_size=3
+                )
         
         # Debug
         if show_debug:
