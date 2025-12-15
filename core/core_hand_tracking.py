@@ -93,10 +93,10 @@ class HandDetector:
             x2, y2 = int(index.x * w), int(index.y * h)
             
             # Khoảng cách
-            data['distance'] = math.hypot(x2 - x1, y2 - y1)
+            data['distance'] = int(math.hypot(x2 - x1, y2 - y1))
             
             # Góc giữa 2 ngón (dùng để xoay ảnh)
-            data['angle'] = math.atan2(y2 - y1, x2 - x1)
+            data['angle'] = int(math.atan2(y2 - y1, x2 - x1))
             
             # Tâm giữa 2 ngón
             data['center_x'] = (x1 + x2) // 2
@@ -106,6 +106,69 @@ class HandDetector:
             data['index_x'] = x2
             data['index_y'] = y2
             
+        return data
+    
+    def count_fingers_up(self, img):
+        """Đếm số ngón tay đang giơ lên"""
+        finger_count = 0
+        
+        if self.results and self.results.multi_hand_landmarks:  # type: ignore
+            hand_lms = self.results.multi_hand_landmarks[0]  # type: ignore
+            
+            # Tips và knuckles
+            # Thumb: landmark 4 vs 3 (dùng x thay vì y vì ngón cái nằm ngang)
+            # Index: landmark 8 vs 6
+            # Middle: landmark 12 vs 10
+            # Ring: landmark 16 vs 14
+            # Pinky: landmark 20 vs 18
+            
+            # Ngón cái - so sánh x (vì nằm ngang)
+            if hand_lms.landmark[4].x < hand_lms.landmark[3].x:
+                finger_count += 1
+            
+            # 4 ngón còn lại - so sánh y
+            tips = [8, 12, 16, 20]
+            knuckles = [6, 10, 14, 18]
+            
+            for tip_id, knuckle_id in zip(tips, knuckles):
+                if hand_lms.landmark[tip_id].y < hand_lms.landmark[knuckle_id].y:
+                    finger_count += 1
+        
+        return finger_count
+    
+    def get_hand_span(self, img):
+        """Tính độ xoè của bàn tay (khoảng cách từ ngón cái đến ngón út)
+        Dùng để zoom ảnh khi có 5 ngón"""
+        span = 0
+        
+        if self.results and self.results.multi_hand_landmarks:  # type: ignore
+            hand_lms = self.results.multi_hand_landmarks[0]  # type: ignore
+            h, w, c = img.shape
+            
+            # Ngón cái (landmark 4) và ngón út (landmark 20)
+            thumb = hand_lms.landmark[4]
+            pinky = hand_lms.landmark[20]
+            
+            x1, y1 = thumb.x * w, thumb.y * h
+            x2, y2 = pinky.x * w, pinky.y * h
+            
+            span = math.hypot(x2 - x1, y2 - y1)
+        
+        return span
+    
+    def get_five_finger_data(self, img):
+        """Lấy dữ liệu 5 ngón tay để điều khiển zoom ảnh"""
+        data = {
+            'finger_count': 0,
+            'hand_span': 0,  # Khoảng cách từ ngón cái đến ngón út
+            'is_spreading': False,  # Đang xoè ra
+            'is_closing': False,  # Đang khép lại
+        }
+        
+        if self.results and self.results.multi_hand_landmarks:  # type: ignore
+            data['finger_count'] = self.count_fingers_up(img)
+            data['hand_span'] = self.get_hand_span(img)
+        
         return data
 
 if __name__ == "__main__":
