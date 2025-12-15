@@ -51,6 +51,63 @@ class HandDetector:
             
         return length
 
+    def get_hand_rotation(self, img):
+        """Tính góc xoay của bàn tay dựa trên vector từ cổ tay đến ngón giữa"""
+        angle = 0
+        if self.results and self.results.multi_hand_landmarks:  # type: ignore
+            hand_lms = self.results.multi_hand_landmarks[0]  # type: ignore
+            h, w, c = img.shape
+            
+            # Lấy điểm cổ tay (landmark 0) và ngón giữa (landmark 12)
+            wrist = hand_lms.landmark[0]
+            middle_finger = hand_lms.landmark[12]
+            
+            wx, wy = wrist.x * w, wrist.y * h
+            mx, my = middle_finger.x * w, middle_finger.y * h
+            
+            # Tính góc (radian) từ vector
+            angle = math.atan2(mx - wx, wy - my)  # Đảo để 0 là hướng lên
+            
+        return angle
+
+    def get_two_finger_data(self, img):
+        """Lấy dữ liệu 2 ngón (trỏ và cái) để điều khiển zoom và xoay"""
+        data = {
+            'distance': 0,
+            'angle': 0,
+            'center_x': 0,
+            'center_y': 0,
+            'index_x': 0,
+            'index_y': 0
+        }
+        
+        if self.results and self.results.multi_hand_landmarks:  # type: ignore
+            hand_lms = self.results.multi_hand_landmarks[0]  # type: ignore
+            h, w, c = img.shape
+            
+            # Ngón cái (landmark 4) và ngón trỏ (landmark 8)
+            thumb = hand_lms.landmark[4]
+            index = hand_lms.landmark[8]
+            
+            x1, y1 = int(thumb.x * w), int(thumb.y * h)
+            x2, y2 = int(index.x * w), int(index.y * h)
+            
+            # Khoảng cách
+            data['distance'] = math.hypot(x2 - x1, y2 - y1)
+            
+            # Góc giữa 2 ngón (dùng để xoay ảnh)
+            data['angle'] = math.atan2(y2 - y1, x2 - x1)
+            
+            # Tâm giữa 2 ngón
+            data['center_x'] = (x1 + x2) // 2
+            data['center_y'] = (y1 + y2) // 2
+            
+            # Vị trí ngón trỏ
+            data['index_x'] = x2
+            data['index_y'] = y2
+            
+        return data
+
 if __name__ == "__main__":
     cap = cv2.VideoCapture(1)
     detector = HandDetector()

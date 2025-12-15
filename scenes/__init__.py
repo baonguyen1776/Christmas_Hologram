@@ -2,4 +2,6 @@
 
 from .tree_3d import HologramTree
 
-__all__ = ["HologramTree"]
+__all__ = [
+    "HologramTree",
+]

@@ -26,30 +26,35 @@ from typing import List, Tuple, Optional
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 
-# Tree particle colors (light pink with rare golden yellow accents)
+# Tree particle colors (dark brown/black at base, transitioning to red/orange/yellow/white like the image)
 TREE_COLORS = [
-    (255, 200, 220),   # Soft pink
-    (255, 210, 225),   # Light pink
-    (255, 220, 230),   # Lighter pink
-    (255, 230, 240),   # Very light pink
-    (255, 235, 245),   # Pale pink
-    (255, 240, 248),   # Nearly white pink
-    (240, 220, 235),   # Muted light pink
-    (255, 215, 235),   # Soft blush pink
-    (255, 225, 242),   # Gentle pink
-    (248, 210, 230),   # Dusty pink
-    (255, 245, 250),   # Almost white pink
-    (255, 220, 100),   # Golden yellow (rare accent)
-    (255, 230, 120),   # Bright golden yellow (rare accent)
+    (20, 10, 10),       # Very dark brown/black
+    (50, 20, 20),       # Dark brown
+    (80, 30, 20),       # Brown
+    (120, 50, 30),      # Medium brown
+    (255, 60, 0),       # Deep red
+    (255, 80, 0),       # Red-orange
+    (255, 100, 0),      # Orange-red
+    (255, 120, 0),      # Orange
+    (255, 150, 0),      # Orange-yellow
+    (255, 180, 0),      # Yellow-orange
+    (255, 200, 50),     # Golden yellow
+    (255, 220, 100),    # Light golden
+    (255, 240, 150),    # Pale yellow
+    (255, 255, 200),    # Yellow-white
+    (255, 255, 255),    # White
 ]
 
-# Heart colors (intense pink-white glow - darker/more saturated)
+# Heart colors (intense vibrant colors with more contrast)
 HEART_COLORS = [
-    (255, 60, 110),    # Hot pink core (darker)
-    (255, 100, 140),   # Bright pink (darker)
-    (255, 140, 170),   # Soft pink (darker)
-    (255, 180, 210),   # Light pink (darker)
-    (255, 220, 235),   # Near white pink
+    (255, 0, 80),      # Hot pink core (very saturated)
+    (255, 20, 100),    # Bright magenta
+    (255, 50, 120),    # Vivid pink
+    (255, 80, 150),    # Strong pink
+    (255, 120, 180),   # Medium pink
+    (255, 160, 200),   # Light pink
+    (255, 200, 220),   # Pale pink
+    (255, 230, 240),   # Near white pink
     (255, 255, 255),   # Pure white center
 ]
 
@@ -144,10 +149,10 @@ class HologramTree:
         self.rotation_speed = 0.012
         
         # Tree geometry parameters (BIGGER TREE)
-        self.tree_height = 550  # Increased from 480
-        self.tree_base_radius = 220
-        self.num_layers = 16  # Fewer layers for clearer separation
-        self.particles_per_layer = 70
+        self.tree_height = 680  # Taller tree
+        self.tree_base_radius = 280  # Wider base
+        self.num_layers = 20  # More layers
+        self.particles_per_layer = 120  # More particles per layer
         
         # Particle collections
         self.tree_particles: List[TreeParticle] = []
@@ -220,7 +225,7 @@ class HologramTree:
                 ))
         
         # Add internal glow particles (inside the cone, respecting layer gaps)
-        for _ in range(300):
+        for _ in range(600):  # More internal particles
             # Pick a random layer to place internal particle
             layer_idx = random.randint(0, self.num_layers - 1)
             layer_ratio = layer_idx / self.num_layers
@@ -255,9 +260,9 @@ class HologramTree:
         """
         self.heart_particles = []
         
-        heart_center_y = self.tree_height / 2 + 60
-        scale = 2.8  # Larger size
-        depth_scale = 2.4  # Z-depth relative to XY - MUCH THICKER for fuller appearance
+        heart_center_y = self.tree_height / 2 + 80  # Higher position
+        scale = 3.5  # Larger size
+        depth_scale = 3.0  # Z-depth relative to XY - MUCH THICKER for fuller appearance
         
         # =====================================================================
         # HEART CURVE DEFINITION (2D)
@@ -307,7 +312,7 @@ class HologramTree:
         # =====================================================================
         
         # Sample many points inside the heart outline
-        for _ in range(2800):  # INCREASED from 2200 for fuller interior
+        for _ in range(4000):  # INCREASED for fuller interior
             t = random.uniform(0, 2 * math.pi)
             hx, hy = heart_2d(t)
             
@@ -337,8 +342,8 @@ class HologramTree:
         # 3. BACK SURFACE - Create depth with back face
         # =====================================================================
         
-        for i in range(280):  # INCREASED from 200
-            t = (i / 280) * 2 * math.pi
+        for i in range(400):  # More back particles
+            t = (i / 400) * 2 * math.pi
             hx, hy = heart_2d(t)
             
             x = hx * scale
@@ -363,7 +368,7 @@ class HologramTree:
         # =====================================================================
         
         # Top V-indent (t near π)
-        for _ in range(700):  # INCREASED from 550
+        for _ in range(1000):  # More V-indent particles
             t = math.pi + random.gauss(0, 0.12)
             hx, hy = heart_2d(t)
             
@@ -387,7 +392,7 @@ class HologramTree:
             ))
         
         # Two lobes (t near π/2 and 3π/2)
-        for _ in range(1000):  # INCREASED from 800
+        for _ in range(1400):  # More lobe particles
             if random.random() < 0.5:
                 t = math.pi/2 + random.gauss(0, 0.2)
             else:
@@ -415,7 +420,7 @@ class HologramTree:
             ))
         
         # Bottom tip (t near 0)
-        for _ in range(650):  # INCREASED from 500
+        for _ in range(900):  # More tip particles
             t = random.gauss(0, 0.1)
             hx, hy = heart_2d(t)
             
@@ -442,14 +447,14 @@ class HologramTree:
         # 5. OUTER GLOW HALO
         # =====================================================================
         
-        for _ in range(350):  # INCREASED from 250
+        for _ in range(500):  # More halo particles
             t = random.uniform(0, 2 * math.pi)
             hx, hy = heart_2d(t)
             
             halo_factor = random.uniform(1.15, 1.45)
             x = hx * halo_factor * scale
             y = hy * halo_factor * scale + heart_center_y
-            max_z = depth_scale * scale * 1.4  # INCREASED from 1.2
+            max_z = depth_scale * scale * 1.6  # Thicker halo
             z = random.uniform(-max_z, max_z)
             
             color = random.choice(HEART_COLORS[3:])
@@ -825,6 +830,12 @@ if __name__ == "__main__":
             
             speed_text = font.render(f"Rotation: {tree.rotation_speed:.3f}", True, WHITE)
             screen.blit(speed_text, (10, 50))
+        
+        # Draw text "Noel vui vẻ Cô giáo"
+        text_font = pygame.font.SysFont("Arial", 36, bold=True)
+        text = text_font.render('Noel vui vẻ "Cô giáo"', True, (255, 200, 100))
+        text_rect = text.get_rect(center=(WIDTH // 2, HEIGHT - 80))
+        screen.blit(text, text_rect)
         
         # Controls hint
         hint = "← → : Speed | ↑ ↓ : Zoom | Z: Auto-Zoom | SPACE: Pause | F: FPS | R: Reset | ESC: Exit"
