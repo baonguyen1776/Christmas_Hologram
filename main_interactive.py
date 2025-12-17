@@ -30,7 +30,10 @@ from config import (
     TITLE_TEXT, TITLE_FONT_SIZE, TITLE_FONT_BOLD, TITLE_FONT_ITALIC, TITLE_FONT_PATH,
     SUBTITLE_TEXT, SUBTITLE_FONT_SIZE, SUBTITLE_FONT_PATH,
     TITLE_SHADOW_COLOR, TITLE_MAIN_COLOR, SUBTITLE_COLOR, TITLE_SHADOW_OFFSET, SHOW_SHADOW,
-    DEBUG_FONT_SIZE, DEBUG_FONT_NAME
+    DEBUG_FONT_SIZE, DEBUG_FONT_NAME,
+    LOVE_LETTER_HEADER, LOVE_LETTER_CONTENT, LOVE_LETTER_FONT_PATH,
+    LOVE_LETTER_HEADER_SIZE, LOVE_LETTER_CONTENT_SIZE,
+    LOVE_LETTER_HEADER_COLOR, LOVE_LETTER_CONTENT_COLOR
 )
 
 # ============================================================================
@@ -75,6 +78,277 @@ class CosmicParticle:
 
 
 # ============================================================================
+# LOVE LETTER CLASS - Bắn tim mở thư tình
+# ============================================================================
+
+class LoveLetter:
+    """Love letter with envelope opening animation"""
+    
+    # States
+    HIDDEN = 0
+    ENVELOPE = 1
+    OPENING = 2
+    LETTER = 3
+    ZOOMED = 4  # Letter đang được zoom full screen
+    COLLAPSING = 5  # Thu thư về cây
+    
+    def __init__(self, width: int, height: int):
+        self.width = width
+        self.height = height
+        self.state = self.HIDDEN
+        self.progress = 0.0  # 0-1 animation progress
+        self.time_elapsed = 0.0
+        self.is_zoomed = False  # Track if letter is currently zoomed
+        self.fly_progress = 0.0  # Animation bay từ center cây ra
+        
+        # Colors
+        self.envelope_color = (255, 182, 193)  # Light pink
+        self.envelope_dark = (255, 160, 180)   # Darker pink for flap
+        self.paper_color = (255, 250, 250)     # Floral white
+        
+        # Font - use config
+        try:
+            self.font_large = pygame.font.Font(LOVE_LETTER_FONT_PATH, LOVE_LETTER_HEADER_SIZE)
+            self.font_small = pygame.font.Font(LOVE_LETTER_FONT_PATH, LOVE_LETTER_CONTENT_SIZE)
+            # Larger fonts for zoomed view
+            self.font_zoomed_large = pygame.font.Font(LOVE_LETTER_FONT_PATH, 72)
+            self.font_zoomed_small = pygame.font.Font(LOVE_LETTER_FONT_PATH, 48)
+        except:
+            self.font_large = pygame.font.Font(None, LOVE_LETTER_HEADER_SIZE)
+            self.font_small = pygame.font.Font(None, LOVE_LETTER_CONTENT_SIZE)
+            self.font_zoomed_large = pygame.font.Font(None, 72)
+            self.font_zoomed_small = pygame.font.Font(None, 48)
+        
+        # Text from config
+        self.main_text = LOVE_LETTER_HEADER
+        self.sub_text = LOVE_LETTER_CONTENT
+        self.header_color = LOVE_LETTER_HEADER_COLOR
+        self.content_color = LOVE_LETTER_CONTENT_COLOR
+        self.heart_text = "💖"
+    
+    def trigger(self):
+        """Start the love letter animation"""
+        self.state = self.ENVELOPE
+        self.progress = 0.0
+        self.time_elapsed = 0.0
+        self.fly_progress = 0.0  # Animation bay từ center ra
+    
+    def update(self, dt: float):
+        """Update animation (dt in seconds)"""
+        if self.state == self.HIDDEN:
+            return
+        
+        self.time_elapsed += dt
+        
+        if self.state == self.ENVELOPE:
+            # Bay từ center cây ra (0.5 giây) - NHANH HƠN
+            self.fly_progress = min(1.0, self.time_elapsed / 0.5)
+            if self.time_elapsed > 0.8:
+                self.state = self.OPENING
+                self.progress = 0.0
+                self.time_elapsed = 0.0
+        
+        elif self.state == self.OPENING:
+            # Opening animation (0.5 seconds) - NHANH HƠN rồi tự động zoom full
+            self.progress = min(1.0, self.time_elapsed / 0.5)
+            if self.progress >= 1.0:
+                # TỰ ĐỘNG CHUYỂN SANG ZOOMED (full content) NGAY LẬP TỨC
+                self.state = self.ZOOMED
+                self.is_zoomed = True
+                self.progress = 1.0
+                self.time_elapsed = 0.0
+        
+        elif self.state == self.LETTER:
+            # Letter hiển thị full ngay, không animation
+            self.progress = 1.0
+        
+        elif self.state == self.ZOOMED:
+            # Zoomed state - letter content displayed full, stable (no animation)
+            pass
+        
+        elif self.state == self.COLLAPSING:
+            # Animation thu thư về cây (0.1 giây)
+            self.fly_progress = max(0.0, 1.0 - self.time_elapsed / 0.1)
+            if self.time_elapsed > 0.1:
+                self.state = self.HIDDEN
+                self.fly_progress = 0.0
+    
+    def set_zoomed(self, zoomed: bool):
+        """Set zoomed state for stable full-screen letter view"""
+        if zoomed and self.state == self.LETTER:
+            self.state = self.ZOOMED
+            self.is_zoomed = True
+        elif not zoomed and self.state == self.ZOOMED:
+            self.state = self.LETTER
+            self.is_zoomed = False
+    
+    def draw(self, surface: pygame.Surface):
+        """Draw the love letter"""
+        if self.state == self.HIDDEN:
+            return
+        
+        # If ZOOMED, don't draw here (will be drawn by _draw_zoomed_love_letter)
+        if self.state == self.ZOOMED:
+            return
+        
+        center_x = self.width // 2
+        center_y = self.height // 2
+        
+        # Vị trí cây (nơi thư bay ra từ đó)
+        tree_center_y = int(self.height * 0.45)  # Giữa cây
+        
+        if self.state == self.ENVELOPE:
+            # Animation bay từ center cây ra
+            # Smooth easing: ease-out cubic
+            t = self.fly_progress
+            ease_t = 1 - (1 - t) ** 3  # Ease-out cubic
+            
+            # Scale từ nhỏ -> lớn
+            fly_scale = 0.1 + ease_t * 0.9  # 0.1 -> 1.0
+            
+            # Position bay từ center cây -> center màn hình
+            fly_y = tree_center_y + (center_y - tree_center_y) * ease_t
+            
+            # Alpha fade in
+            fly_alpha = int(255 * min(1.0, ease_t * 2))  # Fade in nhanh hơn
+            
+            self._draw_envelope(surface, center_x, int(fly_y), alpha=fly_alpha, scale=fly_scale)
+        
+        elif self.state == self.OPENING:
+            # Fade envelope out
+            alpha = int(255 * (1 - self.progress))
+            self._draw_envelope(surface, center_x, center_y, alpha=alpha)
+            # Show paper zooming in
+            paper_scale = 0.3 + self.progress * 0.7  # 0.3 -> 1.0
+            paper_alpha = int(255 * self.progress)
+            self._draw_paper(surface, center_x, center_y, scale=paper_scale, alpha=paper_alpha)
+        
+        elif self.state == self.LETTER:
+            # Show full paper with text - FULL SIZE NGAY LẬP TỨC
+            self._draw_paper(surface, center_x, center_y, scale=1.0, alpha=255)
+        
+        elif self.state == self.COLLAPSING:
+            # Animation thu thư về cây (ngược lại với ENVELOPE)
+            t = self.fly_progress  # 1.0 -> 0.0
+            ease_t = t ** 2  # Ease-in quadratic (chậm đầu, nhanh cuối)
+            
+            # Scale từ lớn -> nhỏ
+            fly_scale = 0.1 + ease_t * 0.9  # 1.0 -> 0.1
+            
+            # Position bay từ center màn hình -> center cây
+            fly_y = tree_center_y + (center_y - tree_center_y) * ease_t
+            
+            # Alpha fade out
+            fly_alpha = int(255 * min(1.0, ease_t * 2))
+            
+            self._draw_paper(surface, center_x, int(fly_y), scale=fly_scale, alpha=fly_alpha)
+    
+    def _draw_envelope(self, surface: pygame.Surface, cx: int, cy: int, alpha: int = 255, scale: float = 1.0):
+        """Draw pink envelope with paper inside (like image design)"""
+        base_w, base_h = 300, 220
+        w = int(base_w * scale)
+        h = int(base_h * scale)
+        
+        # Create envelope surface with alpha
+        envelope_surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        
+        # Envelope back (pink)
+        envelope_back = (255, 182, 193)  # Light pink
+        pygame.draw.rect(envelope_surf, (*envelope_back, alpha), (0, int(60 * scale), w, int(160 * scale)))
+        
+        # Envelope flap (darker pink) - triangular fold
+        flap_points = [(0, int(60 * scale)), (w // 2, 0), (w, int(60 * scale))]
+        pygame.draw.polygon(envelope_surf, (*self.envelope_dark, alpha), flap_points)
+        
+        # Paper inside (cream/beige) - showing from inside envelope
+        paper_margin = int(15 * scale)
+        paper_w = w - paper_margin * 2
+        paper_h = int(100 * scale)
+        paper_y = int(70 * scale)
+        pygame.draw.rect(envelope_surf, (*self.paper_color, alpha), (paper_margin, paper_y, paper_w, paper_h))
+        
+        # Paper border
+        pygame.draw.rect(envelope_surf, (200, 180, 180, alpha), (paper_margin, paper_y, paper_w, paper_h), max(1, int(2 * scale)))
+        
+        # Envelope border
+        pygame.draw.rect(envelope_surf, (255, 150, 180, alpha), (0, int(60 * scale), w, int(160 * scale)), max(1, int(2 * scale)))
+        
+        # Draw on main surface centered
+        surface.blit(envelope_surf, (cx - w // 2, cy - h // 2))
+    
+    def _draw_paper(self, surface: pygame.Surface, cx: int, cy: int, scale: float = 1.0, alpha: int = 255):
+        """Draw love letter paper (blank, no text - only show in zoom)"""
+        width = int(280 * scale)
+        height = int(180 * scale)
+        
+        # Create paper surface
+        paper_surf = pygame.Surface((width, height), pygame.SRCALPHA)
+        
+        # Paper background
+        pygame.draw.rect(paper_surf, (*self.paper_color, alpha), (0, 0, width, height))
+        pygame.draw.rect(paper_surf, (200, 200, 200, alpha), (0, 0, width, height), 2)
+        
+        # Add decorative lines only
+        line_color = (255, 182, 193, alpha)
+        for i in range(3):
+            y = int(30 + i * 45)
+            pygame.draw.line(paper_surf, line_color, (20, y), (width - 20, y), 1)
+        
+        # Text will only show when zoomed, not here
+        
+        # Draw on main surface
+        surface.blit(paper_surf, (cx - width // 2, cy - height // 2))
+    
+    def draw_zoomed(self, surface: pygame.Surface, zoom_progress: float):
+        """Draw love letter in ZOOMED state - stable, no flickering"""
+        if self.state != self.ZOOMED:
+            return
+        
+        # Fixed full size (no animation, stable)
+        width = int(self.width * 0.7)
+        height = int(self.height * 0.65)
+        
+        center_x = self.width // 2
+        center_y = self.height // 2
+        
+        # Dark overlay
+        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        surface.blit(overlay, (0, 0))
+        
+        # Create paper surface
+        paper_surf = pygame.Surface((width, height), pygame.SRCALPHA)
+        
+        # Paper background with nice shadow
+        pygame.draw.rect(paper_surf, (30, 30, 30, 100), (5, 5, width, height))  # Shadow
+        pygame.draw.rect(paper_surf, self.paper_color, (0, 0, width, height))
+        pygame.draw.rect(paper_surf, (200, 180, 180), (0, 0, width, height), 3)  # Border
+        
+        # Header text (larger)
+        header_surf = self.font_zoomed_large.render(self.main_text, True, self.header_color)
+        header_rect = header_surf.get_rect(center=(width // 2, height // 3))
+        paper_surf.blit(header_surf, header_rect)
+        
+        # Content text
+        content_surf = self.font_zoomed_small.render(self.sub_text, True, self.content_color)
+        content_rect = content_surf.get_rect(center=(width // 2, height // 2 + 30))
+        paper_surf.blit(content_surf, content_rect)
+        
+        # Heart decorations
+        try:
+            heart_font = pygame.font.Font(None, 60)
+            hearts = "💖 💕 💖"
+            heart_surf = heart_font.render(hearts, True, (255, 100, 150))
+            heart_rect = heart_surf.get_rect(center=(width // 2, height - 80))
+            paper_surf.blit(heart_surf, heart_rect)
+        except:
+            pass
+        
+        # Draw paper centered
+        surface.blit(paper_surf, (center_x - width // 2, center_y - height // 2))
+
+
+# ============================================================================
 # ENHANCED HAND TRACKING THREAD
 # ============================================================================
 
@@ -94,6 +368,73 @@ class HandTrackingThread(threading.Thread):
         self.finger_count = 0  # Number of fingers up
         self.hand_span = 0  # Khoảng cách từ ngón cái đến ngón út
         self.prev_hand_span = 0  # Để track thay đổi
+        self.fingers_up = [False] * 5  # Track each finger individually
+        self.heart_gesture = False  # Detect trái tim gesture
+        self.results = None  # Lưu detector.results để dùng sau
+        
+    def _detect_heart_gesture(self, detector, img):
+        """
+        Detect heart gesture (trái tim) bằng 2 tay
+        Kiểm tra: ngón trỏ + giữa xoè ra ở cả 2 tay, 2 đầu ngón chéo nhau
+        """
+        try:
+            if not detector.results or not detector.results.multi_hand_landmarks:  # type: ignore
+                return False
+            
+            hands = detector.results.multi_hand_landmarks  # type: ignore
+            if len(hands) < 2:
+                return False
+            
+            if img is None:
+                return False
+            
+            h, w, c = img.shape
+            
+            # Lấy 2 bàn tay
+            hand_left = hands[0]
+            hand_right = hands[1]
+            
+            # Kiểm tra ngón trỏ + giữa xoè ra
+            # Index tip=8, Middle tip=12
+            def check_fingers_up(hand):
+                """Check if index + middle up"""
+                index_up = hand.landmark[8].y < hand.landmark[6].y  # Index tip < knuckle
+                middle_up = hand.landmark[12].y < hand.landmark[10].y  # Middle tip < knuckle
+                return index_up and middle_up
+            
+            # Cả 2 tay phải có index + middle xoè
+            if not (check_fingers_up(hand_left) and check_fingers_up(hand_right)):
+                return False
+            
+            # Lấy tọa độ ngón trỏ + giữa của mỗi tay
+            # Left hand
+            index_left = (hand_left.landmark[8].x * w, hand_left.landmark[8].y * h)
+            middle_left = (hand_left.landmark[12].x * w, hand_left.landmark[12].y * h)
+            
+            # Right hand
+            index_right = (hand_right.landmark[8].x * w, hand_right.landmark[8].y * h)
+            middle_right = (hand_right.landmark[12].x * w, hand_right.landmark[12].y * h)
+            
+            # Kiểm tra chéo nhau:
+            # Ngón trỏ trái + giữa phải: trái < phải (x), hoặc
+            # Ngón giữa trái + trỏ phải: trái < phải (x)
+            cross_condition = (
+                (index_left[0] < middle_right[0] and middle_left[0] > index_right[0]) or
+                (index_right[0] < middle_left[0] and middle_right[0] > index_left[0])
+            )
+            
+            if not cross_condition:
+                return False
+            
+            # Kiểm tra ở vị trí trên màn hình (y < 300)
+            avg_y = (index_left[1] + middle_left[1] + index_right[1] + middle_right[1]) / 4
+            
+            if avg_y < 350:  # Ở trên
+                return True
+            
+            return False
+        except Exception as e:
+            return False
         
     def run(self):
         cap = cv2.VideoCapture(self.camera_id)
@@ -101,7 +442,16 @@ class HandTrackingThread(threading.Thread):
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
         cap.set(cv2.CAP_PROP_FPS, 30)
         
+        # Set max_num_hands=2 để detect cả 2 bàn tay
         detector = HandDetector(detection_con=0.7, track_con=0.5)
+        # Tái tạo hands object với max_num_hands=2
+        from mediapipe.python.solutions import hands as mp_hands
+        detector.hands = mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=2,  # Nhận diện tối đa 2 bàn tay
+            min_detection_confidence=0.7,
+            min_tracking_confidence=0.5
+        )
         
         while self.running:
             success, img = cap.read()
@@ -116,8 +466,15 @@ class HandTrackingThread(threading.Thread):
             index_x = 0
             index_y = 0
             finger_count = 0
+            fingers_up = [False] * 5  # Track each finger: thumb, index, middle, ring, pinky
+            heart_gesture = False  # Detect trái tim gesture
             
             if detector.results and detector.results.multi_hand_landmarks:  # type: ignore
+                # Check heart gesture using improved detector method
+                heart_result = detector.detect_heart_style(img)
+                if heart_result == "Finger_Heart":
+                    heart_gesture = True
+                
                 hand_lms = detector.results.multi_hand_landmarks[0]  # type: ignore
                 h, w, c = img.shape
                 index_x = int(hand_lms.landmark[8].x * w)
@@ -132,11 +489,12 @@ class HandTrackingThread(threading.Thread):
                 tips = [4, 8, 12, 16, 20]
                 knuckles = [3, 6, 10, 14, 18]
                 
-                for tip_id, knuckle_id in zip(tips, knuckles):
+                for i, (tip_id, knuckle_id) in enumerate(zip(tips, knuckles)):
                     tip_y = hand_lms.landmark[tip_id].y
                     knuckle_y = hand_lms.landmark[knuckle_id].y
                     if tip_y < knuckle_y:  # Tip higher than knuckle = finger up
                         finger_count += 1
+                        fingers_up[i] = True
                 
                 # Tính hand span (khoảng cách từ ngón cái đến ngón út)
                 thumb = hand_lms.landmark[4]
@@ -144,13 +502,14 @@ class HandTrackingThread(threading.Thread):
                 hand_span = math.hypot((pinky.x - thumb.x) * w, (pinky.y - thumb.y) * h)
             else:
                 hand_span = 0
+                fingers_up = [False] * 5
             
             try:
-                self.data_queue.put_nowait((dist, index_x, index_y, finger_count, hand_span))
+                self.data_queue.put_nowait((dist, index_x, index_y, finger_count, hand_span, fingers_up, heart_gesture))
             except queue.Full:
                 try:
                     self.data_queue.get_nowait()
-                    self.data_queue.put_nowait((dist, index_x, index_y, finger_count, hand_span))
+                    self.data_queue.put_nowait((dist, index_x, index_y, finger_count, hand_span, fingers_up, heart_gesture))
                 except:
                     pass
         
@@ -158,7 +517,7 @@ class HandTrackingThread(threading.Thread):
     
     def get_data(self):
         try:
-            self.current_distance, new_x, new_y, self.finger_count, new_span = self.data_queue.get_nowait()
+            self.current_distance, new_x, new_y, self.finger_count, new_span, self.fingers_up, self.heart_gesture = self.data_queue.get_nowait()
             self.prev_x = self.current_x
             self.prev_y = self.current_y
             self.current_x = new_x
@@ -234,8 +593,16 @@ class InteractiveHologram:
         # Base hand span for zoom calculation
         self.base_hand_span = 0
         
-        # Interaction mode: "tree", "photos", "zoom_photo"
+        # Interaction mode: "tree", "photos", "zoom_photo", "heart_photos", "zoom_letter"
         self.interaction_mode = "tree"
+        
+        # HEART MODE - khi user bắn tim, tắt hoàn toàn ảnh
+        self.heart_mode = False  # True = đang ở chế độ trái tim (chỉ có thư, không có ảnh)
+        
+        # Love letter animation
+        self.love_letter = LoveLetter(width, height)
+        self.heart_detected_cooldown = 0
+        self.love_letter_zoom_progress = 0.0  # Zoom state cho love letter (0.0 - 1.0)
         
         # Time for animation
         self.time = 0
@@ -323,7 +690,7 @@ class InteractiveHologram:
         
         print(f"Loaded {len(self.photos)} photos from {assets_dir}/")
     
-    def update_hand_tracking(self, distance: float, index_x: int, prev_x: int, index_y: int, prev_y: int, finger_count: int, hand_span: float = 0, prev_hand_span: float = 0):
+    def update_hand_tracking(self, distance: float, index_x: int, prev_x: int, index_y: int, prev_y: int, finger_count: int, hand_span: float = 0, prev_hand_span: float = 0, fingers_up: list = []):
         """
         Update based on hand tracking data
         
@@ -332,6 +699,10 @@ class InteractiveHologram:
         - PHOTOS: zoom_in (bung rộng) -> zoom ảnh (5 ngón), zoom_out (chụm) -> về TREE
         - ZOOM_PHOTO: Dùng hand_span để điều khiển độ zoom, chụm ngón -> thoát
         """
+        
+        # Set default fingers_up if not provided
+        if fingers_up is None:
+            fingers_up = [False] * 5
         
         # Check cooldown
         can_gesture = (self.time - self.last_gesture_time) > self.gesture_cooldown
@@ -366,66 +737,131 @@ class InteractiveHologram:
             if (self.time - self.explosion_start_time) < self.explosion_protection_duration:
                 return  # Bỏ qua mọi gesture
             
-            # 2 NGÓN CHỤM (hand_span <= 80) -> CẦN GIỮ 2 GIÂY ĐỂ COLLAPSE VỀ TREE
-            if hand_span <= 80 and hand_span > 0:
-                # Bắt đầu đếm hoặc tiếp tục đếm
-                if self.zoom_out_hold_start == 0:
-                    self.zoom_out_hold_start = self.time
-                    print(f"[GESTURE] Starting pinch hold to collapse (hand_span={hand_span:.0f})...")
-                
-                # Check nếu đã giữ đủ 2 giây
-                hold_time = self.time - self.zoom_out_hold_start
-                if hold_time >= 90:  # 1.5 giây @ 60fps
-                    self.target_explosion = 0.0
-                    self.photos_visible = False
-                    self.interaction_mode = "collapsing"
+            # XÒE 5 NGÓN -> zoom NGAY LẬP TỨC (ảnh hoặc thư tình)
+            if finger_count >= 5 and hand_span > 100:  # 5 ngón giơ rộng
+                # Nếu thư tình đang hiển thị (LETTER state), zoom thư lên ZOOMED state
+                if self.love_letter.state == LoveLetter.LETTER:
+                    self.love_letter.set_zoomed(True)  # Switch to ZOOMED state
+                    self.interaction_mode = "zoom_letter"  # New mode for letter zoom
                     self.last_gesture_time = self.time
-                    self.zoom_out_hold_start = 0  # Reset
-                    print(f"[GESTURE] PHOTOS -> COLLAPSING (pinch held {hold_time/60:.1f}s)")
-            else:
-                # Không còn chụm -> reset timer
-                if self.zoom_out_hold_start > 0:
-                    print(f"[GESTURE] Pinch hold cancelled (hand_span={hand_span:.0f})")
-                self.zoom_out_hold_start = 0
+                    self.zoom_out_hold_start = 0
+                    print(f"[GESTURE] PHOTOS -> ZOOM_LETTER (Love Letter, 5 fingers, hand_span={hand_span:.0f})")
+                # Nếu không có thư, zoom ảnh
+                elif self.love_letter.state == LoveLetter.HIDDEN:
+                    self._select_closest_photo()
+                    if self.selected_photo_index >= 0:
+                        self.interaction_mode = "zoom_photo"
+                        self.photo_zoom_progress = 0.0
+                        self.photo_extraction_start_time = self.time
+                        self.photo_extraction_progress = 0.0
+                        self.last_gesture_time = self.time
+                        self.zoom_out_hold_start = 0  # Reset collapse timer
+                        print(f"[GESTURE] PHOTOS -> ZOOM_PHOTO (Photo, 5 fingers, hand_span={hand_span:.0f})")
             
-            # XÒE 5 NGÓN (hand_span lớn) -> zoom ảnh NGAY LẬP TỨC
-            if hand_span > 120:  # Đơn giản: chỉ check hand_span
-                self._select_closest_photo()
-                if self.selected_photo_index >= 0:
-                    self.interaction_mode = "zoom_photo"
-                    self.photo_zoom_progress = 0.0  # Bắt đầu từ 0%, zoom + extraction cùng lúc
-                    self.photo_extraction_start_time = self.time
-                    self.photo_extraction_progress = 0.0  # Start extraction animation
-                    self.last_gesture_time = self.time
-                    print(f"[GESTURE] PHOTOS -> ZOOM_PHOTO (hand_span={hand_span:.0f})")
+            # ĐÚng 2 NGÓN XÒE RA (THUMB + INDEX) -> COLLAPSE NGAY VỀ TREE
+            # Điều kiện: Chỉ thumb lên + index lên, các ngón khác xuống + hand_span lớn (xoè)
+            elif fingers_up[0] and fingers_up[1] and not (fingers_up[2] or fingers_up[3] or fingers_up[4]) and hand_span > 100:
+                # Không set target_explosion ngay, để thư collapse trước
+                self.photos_visible = False
+                self.interaction_mode = "collapsing"
+                self.last_gesture_time = self.time
+                self.zoom_out_hold_start = 0
+                print(f"[GESTURE] PHOTOS -> COLLAPSING (2 fingers spread: thumb+index open, hand_span={hand_span:.0f})")
+            
+            # 2 NGÓN CHỤM (THUMB + INDEX CHỤM LẠI) -> NHƯ CŨ (BẢO LƯU CHO SAU)
+            # Hiện tại không dùng vì 2 ngón chụm dùng ở ZOOM_PHOTO mode
+            elif fingers_up[0] and fingers_up[1] and not (fingers_up[2] or fingers_up[3] or fingers_up[4]) and hand_span <= 80:
+                # 2 ngón chụm lại - bỏ qua (không làm gì)
+                pass
+            else:
+                # Không còn chụm hoặc xoè -> reset timer
+                if self.zoom_out_hold_start > 0:
+                    print(f"[GESTURE] Pinch hold cancelled ({finger_count} fingers, hand_span={hand_span:.0f})")
+                self.zoom_out_hold_start = 0
         
         # === MODE: COLLAPSING (đang thu về cây) ===
         elif self.interaction_mode == "collapsing":
-            # Chờ animation xong mới chuyển về tree
-            if self.explosion_progress == 0:
+            # Bắt đầu animation thu thư về cây (nếu đang hiển thị)
+            if self.love_letter.state in [LoveLetter.ZOOMED, LoveLetter.LETTER]:
+                self.love_letter.state = LoveLetter.COLLAPSING
+                self.love_letter.time_elapsed = 0.0
+                self.love_letter.fly_progress = 1.0
+            
+            # Khi thư xong collapse, mới bắt đầu collapse particles
+            if self.love_letter.state == LoveLetter.HIDDEN and self.target_explosion > 0:
+                self.target_explosion = 0.0
+            
+            # Chờ cả thư và particles xong mới chuyển về tree
+            if self.explosion_progress == 0 and self.love_letter.state == LoveLetter.HIDDEN:
                 self.interaction_mode = "tree"
+                self.heart_mode = False  # Tắt heart mode
                 print(f"[GESTURE] COLLAPSING -> TREE (animation done)")
+        
+        # === MODE: HEART_PHOTOS (vũ trụ với THƯ, KHÔNG CÓ ẢNH) ===
+        elif self.interaction_mode == "heart_photos":
+            # CHECK PROTECTION: Không nhận gesture trong thời gian đầu
+            if (self.time - self.explosion_start_time) < self.explosion_protection_duration:
+                return  # Bỏ qua mọi gesture
+            
+            # XÒE 5 NGÓN -> zoom THƯ lên full screen
+            if finger_count >= 5 and hand_span > 100:
+                if self.love_letter.state == LoveLetter.LETTER:
+                    self.love_letter.set_zoomed(True)
+                    self.interaction_mode = "zoom_letter"
+                    self.last_gesture_time = self.time
+                    print(f"[GESTURE] HEART_PHOTOS -> ZOOM_LETTER (5 fingers)")
+            
+            # 2 NGÓN XÒE RA -> COLLAPSE VỀ TREE
+            elif fingers_up[0] and fingers_up[1] and not (fingers_up[2] or fingers_up[3] or fingers_up[4]) and hand_span > 100:
+                # Không set target_explosion ngay, để thư collapse trước
+                self.interaction_mode = "collapsing"
+                self.last_gesture_time = self.time
+                print(f"[GESTURE] HEART_PHOTOS -> COLLAPSING")
+        
+        # === MODE: ZOOM_LETTER (đang xem thư phóng to - CỐ ĐỊNH, KHÔNG GIẬT) ===
+        elif self.interaction_mode == "zoom_letter":
+            # 2 ngón chụm -> thoát zoom letter, về lại heart_photos hoặc photos
+            if finger_count <= 2:
+                self.love_letter.set_zoomed(False)  # Back to LETTER state
+                # Trả về mode phù hợp
+                if self.heart_mode:
+                    self.interaction_mode = "heart_photos"
+                else:
+                    self.interaction_mode = "photos"
+                self.last_gesture_time = self.time
+                print(f"[GESTURE] ZOOM_LETTER -> {'HEART_PHOTOS' if self.heart_mode else 'PHOTOS'} (pinch detected, exit)")
         
         # === MODE: ZOOM_PHOTO (đang xem ảnh phóng to) ===
         elif self.interaction_mode == "zoom_photo":
-            # Dùng hand_span TUYỆT ĐỐI để điều khiển zoom
-            # Ngưỡng: 
-            # - hand_span < 80: nắm tay -> thoát zoom
-            # - hand_span 80-250: zoom từ 0 đến 1
-            # - hand_span > 250: full zoom
+            # Dùng finger_count + hand_span để điều khiển zoom động
+            # - 2 NGÓN CHỤM (finger_count <= 2) -> EXIT NGAY LẬP TỨC
+            # - 4-5 NGÓN XÒE -> Map hand_span sang zoom level (càng xoè rộng càng to)
             
-            if hand_span > 80:
-                # Tay đang xoè -> map hand_span sang zoom progress
-                target_zoom = (hand_span - 60) / 140.0
-                target_zoom = max(0.1, min(1.0, target_zoom))
-                self.photo_zoom_progress += (target_zoom - self.photo_zoom_progress) * 0.2
-            else:
-                # hand_span <= 80 hoặc = 0: Nắm tay / không detect -> THOÁT ZOOM
+            # TASK 1: 2 ngón chụm -> exit ngay lập tức
+            if finger_count <= 2:
                 self.photo_zoom_progress = 0
                 self.selected_photo_index = -1
                 self.interaction_mode = "photos"
                 self.last_gesture_time = self.time
-                print(f"[GESTURE] ZOOM_PHOTO -> PHOTOS (closed/no hand, span={hand_span:.0f})")
+                print(f"[GESTURE] ZOOM_PHOTO -> PHOTOS (pinch detected, exit immediately)")
+                return
+            
+            # TASK 2: Zoom theo hand_span cho ảnh
+            if finger_count >= 4 and hand_span > 0:
+                if self.selected_photo_index >= 0:
+                    # Map hand_span sang zoom level cho ảnh
+                    # hand_span: 100 (chụm) -> 300 (xoè rộng)
+                    # zoom: 0.1 (nhỏ) -> 1.0 (to)
+                    min_span = 100
+                    max_span = 350
+                    target_zoom = (hand_span - min_span) / (max_span - min_span)
+                    target_zoom = max(0.1, min(1.0, target_zoom))  # Clamp 0.1-1.0
+                    
+                    # Smooth interpolation
+                    self.photo_zoom_progress += (target_zoom - self.photo_zoom_progress) * 0.15
+            else:
+                # 3 ngón hoặc không detect hand -> giữ zoom hiện tại
+                pass
         
         self.prev_distance = distance
     
@@ -725,11 +1161,11 @@ class InteractiveHologram:
         diff = self.target_explosion - self.explosion_progress
         
         if diff > 0:
-            # Expanding (zoom in): ease-out (nhanh đầu, chậm cuối)
-            easing = 0.025 + abs(diff) * 0.03
+            # Expanding: smooth ease-out
+            easing = 0.06 + abs(diff) * 0.08
         else:
-            # Collapsing (zoom out): NHANH HƠN để về tree mode sớm
-            easing = 0.08 + abs(diff) * 0.05
+            # Collapsing: khớp với thư (0.1 giây ~ 6 frames at 60fps)
+            easing = 0.4 + abs(diff) * 0.4
         
         self.explosion_progress += diff * easing
         
@@ -738,6 +1174,13 @@ class InteractiveHologram:
             self.explosion_progress = 0
         
         self.explosion_progress = max(0, min(1, self.explosion_progress))
+        
+        # Update love letter
+        self.love_letter.update(1/60.0)  # 60 FPS
+        
+        # Nếu love letter vừa tự động chuyển sang ZOOMED, cập nhật interaction_mode
+        if self.love_letter.state == LoveLetter.ZOOMED and self.interaction_mode != "zoom_letter":
+            self.interaction_mode = "zoom_letter"
         
         # Sphere rotation
         self.sphere_rotation += self.sphere_rotation_speed
@@ -781,16 +1224,24 @@ class InteractiveHologram:
         # Vẽ cosmic particles (bao gồm cây + trái tim)
         self._draw_cosmic_particles(surface, zoom)
         
-        # Draw photos nếu còn hiển thị
-        if self.explosion_progress > 0.1:
+        # Draw photos nếu còn hiển thị VÀ KHÔNG phải heart_mode
+        # Trong heart_mode, chỉ có thư, KHÔNG có ảnh!
+        if self.explosion_progress > 0.1 and not self.heart_mode:
             self._draw_photos(surface, zoom)
         
         # CÂY TIẾP TỤC XOAY - particles sẽ động theo rotation
         self.tree.update()
         
-        # Draw zoomed photo on top
-        if self.interaction_mode == "zoom_photo":
+        # Draw zoomed photo on top (chỉ khi KHÔNG phải heart_mode)
+        if self.interaction_mode == "zoom_photo" and not self.heart_mode:
             self._draw_zoomed_photo(surface)
+        
+        # Draw zoomed love letter (stable, no flickering)
+        if self.interaction_mode == "zoom_letter":
+            self.love_letter.draw_zoomed(surface, 1.0)
+        
+        # Draw love letter on top (non-zoomed states: ENVELOPE, OPENING, LETTER)
+        self.love_letter.draw(surface)
         
         self.update()
 
@@ -911,7 +1362,28 @@ def main():
         
         # Get hand tracking data
         hand_dist, index_x, prev_x, index_y, prev_y, finger_count, hand_span, prev_hand_span = hand_tracker.get_data()
-        hologram.update_hand_tracking(hand_dist, index_x, prev_x, index_y, prev_y, finger_count, hand_span, prev_hand_span)
+        
+        # ========================================================================
+        # DETECT HEART SHAPE GESTURE (LOVE LETTER EASTER EGG)
+        # ========================================================================
+        if hologram.heart_detected_cooldown <= 0 and hologram.interaction_mode == "tree":
+            # Heart gesture detected inside HandTrackingThread
+            if hand_tracker.heart_gesture:
+                print("💕 BẮN TIM THÀNH CÔNG! ĐỦ ĐIỀU KIỆN MỞ THƯ TÌNH! 💕")
+                # Trigger HEART MODE - particles bung ra, thư di chuyển từ cây
+                hologram.heart_mode = True  # Bật chế độ trái tim (TẮT ảnh!)
+                hologram.target_explosion = 1.0
+                hologram.explosion_start_time = hologram.time
+                hologram.photos_visible = False  # TẮT ảnh hoàn toàn
+                hologram.interaction_mode = "heart_photos"  # Mode mới cho heart
+                hologram.love_letter.trigger()
+                hologram.love_letter_zoom_progress = 0.0
+                hologram.heart_detected_cooldown = 300  # 5 giây cooldown
+        
+        if hologram.heart_detected_cooldown > 0:
+            hologram.heart_detected_cooldown -= 1
+        
+        hologram.update_hand_tracking(hand_dist, index_x, prev_x, index_y, prev_y, finger_count, hand_span, prev_hand_span, hand_tracker.fingers_up)
         
         # Clear screen
         screen.fill(BLACK)
@@ -955,17 +1427,6 @@ def main():
             for i, txt in enumerate(debug_texts):
                 surf = font.render(txt, True, WHITE)
                 screen.blit(surf, (10, 10 + i * 20))
-        
-        # Hints based on mode
-        if hologram.interaction_mode == "tree":
-            hint = "Bung 2 ngón để mở vũ trụ | SPACE: Toggle | D: Debug | ESC: Exit"
-        elif hologram.interaction_mode == "photos":
-            hint = "Lướt ngón trỏ để xoay ảnh | Bung ngón để zoom ảnh | ←→: Xoay | ENTER: Zoom"
-        else:
-            hint = "Khép 2 ngón để thu nhỏ | ESC: Đóng ảnh"
-        
-        hint_surf = font.render(hint, True, (80, 80, 80))
-        screen.blit(hint_surf, (WIDTH // 2 - hint_surf.get_width() // 2, HEIGHT - 25))
         
         pygame.display.flip()
         clock.tick(60)

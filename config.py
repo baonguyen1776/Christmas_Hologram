@@ -29,3 +29,14 @@ SHOW_SHADOW = False  # Set to True để hiện shadow
 # ---- FONT DEBUG ----
 DEBUG_FONT_SIZE = 18
 DEBUG_FONT_NAME = "Arial"
+
+# ============================================================================
+# LOVE LETTER SETTINGS - Nội dung thư tình khi bắn tim
+# ============================================================================
+LOVE_LETTER_HEADER = "Dear My Princess,"
+LOVE_LETTER_CONTENT = "Em ăn cơm chưa :))"
+LOVE_LETTER_FONT_PATH = "assets/GreatVibes-Regular.ttf"
+LOVE_LETTER_HEADER_SIZE = 48
+LOVE_LETTER_CONTENT_SIZE = 28
+LOVE_LETTER_HEADER_COLOR = (255, 100, 100)  # Đỏ hồng
+LOVE_LETTER_CONTENT_COLOR = (255, 120, 120)  # Hồng nhạt

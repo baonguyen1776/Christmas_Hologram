@@ -170,6 +170,79 @@ class HandDetector:
             data['hand_span'] = self.get_hand_span(img)
         
         return data
+    
+    def detect_heart_style(self, img):
+        """
+        Nhận diện tim - IMPROVED VERSION
+        Chỉ detect Finger Heart (bắn tim 1 tay) vì dễ và ổn định hơn
+        
+        Logic: Ngón cái + ngón trỏ chạm nhau, các ngón khác gập xuống
+        """
+        try:
+            if not self.results or not self.results.multi_hand_landmarks:  # type: ignore
+                return None
+            
+            hands = self.results.multi_hand_landmarks  # type: ignore
+            h, w, c = img.shape
+            
+            for hand in hands:
+                # Lấy landmarks
+                thumb_tip = hand.landmark[4]   # Đầu ngón cái
+                thumb_ip = hand.landmark[3]    # Đốt giữa ngón cái
+                index_tip = hand.landmark[8]   # Đầu ngón trỏ
+                index_pip = hand.landmark[6]   # Đốt giữa ngón trỏ
+                middle_tip = hand.landmark[12]
+                middle_pip = hand.landmark[10]
+                ring_tip = hand.landmark[16]
+                ring_pip = hand.landmark[14]
+                pinky_tip = hand.landmark[20]
+                pinky_pip = hand.landmark[18]
+                wrist = hand.landmark[0]
+                middle_mcp = hand.landmark[9]
+                
+                # Đổi sang pixel
+                x4, y4 = thumb_tip.x * w, thumb_tip.y * h
+                x8, y8 = index_tip.x * w, index_tip.y * h
+                x0, y0 = wrist.x * w, wrist.y * h
+                x9, y9 = middle_mcp.x * w, middle_mcp.y * h
+                
+                # Tính palm size để chuẩn hóa
+                palm_size = math.hypot(x9 - x0, y9 - y0)
+                if palm_size < 30:  # Bàn tay quá nhỏ, bỏ qua
+                    continue
+                
+                # 1. Kiểm tra ngón cái và ngón trỏ CHẠM NHAU
+                tip_distance = math.hypot(x8 - x4, y8 - y4)
+                tip_ratio = tip_distance / palm_size
+                
+                # 2. Kiểm tra các ngón còn lại GẬP XUỐNG (không duỗi)
+                # Ngón gập = tip.y > pip.y (vì trục Y hướng xuống)
+                middle_bent = middle_tip.y > middle_pip.y
+                ring_bent = ring_tip.y > ring_pip.y
+                pinky_bent = pinky_tip.y > pinky_pip.y
+                
+                # 3. Kiểm tra ngón cái và trỏ DUỖI RA (tip.y < pip.y hoặc ngang)
+                # Cho phép linh hoạt hơn với ngón cái (có thể nghiêng)
+                thumb_extended = True  # Ngón cái luôn coi là duỗi trong gesture này
+                index_extended = index_tip.y < index_pip.y + 0.05  # Cho phép sai số nhỏ
+                
+                # DEBUG: Uncomment để xem giá trị
+                # print(f"tip_ratio={tip_ratio:.2f}, middle={middle_bent}, ring={ring_bent}, pinky={pinky_bent}")
+                
+                # ĐIỀU KIỆN FINGER HEART:
+                # - Ngón cái + trỏ chạm nhau (ratio < 0.25)
+                # - Ít nhất 2 trong 3 ngón còn lại gập xuống
+                bent_count = sum([middle_bent, ring_bent, pinky_bent])
+                
+                if tip_ratio < 0.25 and bent_count >= 2:
+                    return "Finger_Heart"
+            
+            return None
+            
+        except Exception as e:
+            print(f"Lỗi detect tim: {e}")
+            return None
+
 
 if __name__ == "__main__":
     cap = cv2.VideoCapture(1)
